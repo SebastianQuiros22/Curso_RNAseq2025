@@ -3,7 +3,7 @@ Curso RNAseq Universidad de Costa Rica
 
 # Graficos
 
-### Datos
+## Datos
 ```{r}
 library(ggplot2)
 library(pheatmap)
