@@ -1,0 +1,184 @@
+### Instalando paquetes
+if (!require("BiocManager", quietly = TRUE))
+  install.packages("BiocManager")
+
+BiocManager::install("edgeR")
+BiocManager::install("limma")
+
+library(limma)
+library(edgeR)
+
+### Para crear un archivo donde se almacenarán los resultados del análisis:
+setwd("/home/alumno16/Curso_RNAseq/")
+outpath = "/home/alumno16/Curso_RNAseq/results/"
+dir.create(outpath, showWarnings=FALSE)
+
+### Aquí llamaremos a nuestra tabla de datos y la guardaremos en una variable dentro de R
+counts = read.table("matriz_arabidopsis_2023.txt", header=TRUE, row.names = 1, sep="\t", comment.char="") 
+
+#Podemos saber cómo luce nuestra tabla cargada y que dimenciones tiene este objeto. 
+head(counts)
+dim(counts)
+
+#genes que tienen menos de 2 reads y en la suma de todas las filas da menos de 10 lecturas se elimnarán. 
+
+counts = counts[rowSums(cpm(counts) >= 1) >=1,]
+
+#aquí vemos el uso del comando cpm y nos ayuda a tener los datos de expresión en cuentas por millón.
+
+#despues de aplicar este filtro, nuestra tabla ha cambiado y podemos volver a evaluarla
+head(counts)
+dim(counts)
+
+colnames(counts)
+
+
+#esto es para declarar los grupos que usaremos en el objeto DGEList (objeto de edgeR)
+grp = sub("..$", "", colnames(counts)) 
+
+
+#vean el objeto
+grp
+
+#haciendo el objeto DGEList
+dge = DGEList(counts=counts, group=grp)
+
+dge
+
+dgeNorm = calcNormFactors(dge)
+
+#Puedes visualizar los factores de normalización
+dgeNorm$samples
+
+
+#estimaremos la dispersión entre nuestras librerías 
+dgeNorm = estimateCommonDisp(dgeNorm)
+
+#podemos visualizar este valor (si no tuvieran replicas es posible ingresar este valor manualmente, pero no es ideal)
+dgeNorm$common.dispersion
+
+#Calculando la expresión diferencial entre nuestras librerias (prueba pareada, exact-test)
+
+#Pueden especificar que grupo de datos desean comparar
+diff_exp = exactTest(dgeNorm, dispersion = dgeNorm$common.dispersion, pair = c("control", "treatment" ))
+diff_exp2 = exactTest(dgeNorm, dispersion = dgeNorm$common.dispersion, pair = c("control", "treatment" ))
+
+#ahora visualizaremos el objeto resultante de la prueba exacta de Fisher (objeto DGEExact)
+
+diff_exp 
+
+#es deseable saber que genes tienen un mayor cambio y con que valor
+
+topTags(diff_exp)
+
+#podemos conocer cuantos genes nos esta arrojando el topTags
+
+dim(topTags(diff_exp))
+
+# guardar la tabla con todos los valores en un objeto de R y poder usarlo posteriormente es importante para nuestros fines.
+
+deTab = topTags(diff_exp, n=Inf)$table
+
+#esta tabla puede ser tratada con los comandos de selección y comparación que ya hemos visto
+
+deTab[c(15,30),] # FDR son falsos positivos FC es la tasa de cambio
+
+#podemos filtrar esta tabla por cualquier criterio matemático
+
+row.names(deTab)[deTab$logFC > 5]  #recuerden que el FC esta dado en log2.
+
+#y podemos explorar los valores 
+deTab["AT5G53820",]
+
+#esto nos permite entonces filtrar automáticamente por cualquier valor que predeterminemos
+#aquí se proponen valores estándar de filtrado pero esto se puede modificar
+
+deGenes = rownames(deTab)[deTab$FDR < 0.05 & abs(deTab$logFC) > 1]
+down=row.names(deTab)[deTab$logFC< -1]
+over=row.names(deTab)[deTab$logFC> 1]
+
+#para saber el número total de genes que pasan estos filtros (genes diferenciales según nuestro criterio)
+
+print(paste("total de diferenciales:", length(deGenes)))
+print(paste("número de genes inducidos:", length(over)))
+print(paste("número de genes reprimidos:", length(down)))
+
+#Graficando los genes diferenciales para poder observar cómo se comportan y guardando los resultados
+plotSmear(dge, de.tags=deGenes, ylab = "Control vs Treatment")
+
+#Podemos exportar la tabla de genes diferenciales a nuestra carpeta de trabajo
+
+write.table(deTab, file=paste(outpath, "diff_gene_wt.txt", sep=""), row.names=TRUE, col.names=NA, quote=FALSE, sep="\t")
+
+#aquí exportamos solo los genes que se sobreexpresan o se reprimen.
+write.table(down, file=paste(outpath, "down.txt", sep=""), row.names=TRUE, col.names=NA, quote=FALSE, sep="\t")
+write.table(over, file=paste(outpath, "up.txt", sep=""), row.names=TRUE, col.names=NA, quote=FALSE, sep="\t")
+
+#Gráficos de expresión diferencial
+
+#Instalando las paqueterias
+install.packages("gplots")
+install.packages("RcolorBrewer")
+
+library("gplots")
+library("RColorBrewer")
+
+#normalizamos nuestros datos de expresión por cuentas por millón
+normalizados= cpm(counts)
+
+#extraemos la expresión de los genes diferenciales
+normalizados_diferenciales= normalizados[deGenes,]
+normalizados_up= normalizados[over,]
+normalizados_low= normalizados[down,]
+
+#veamos cómo se ve esta tablita
+head(normalizados_diferenciales)
+dim(normalizados_diferenciales)
+
+#hagamos un HEATMAP!
+heatmap(normalizados_diferenciales)
+heatmap(normalizados_up)
+heatmap(normalizados_low)
+
+
+par(mfrow=c(1,2)) 
+boxplot(log(counts),col=rainbow(6), main="antes de la normalización")
+boxplot(log(normalizados), col=rainbow(6), main="después de la normalización")
+
+
+#Barplot de la cantidad de reads en cada librería
+par(mfrow=c(1,1)) 
+barplot(apply(normalizados_diferenciales,2,sum),las=2, cex.names = 1, col = (1:6))
+
+#Un PCA bonito de la distribución de nuestros datos
+pca <- princomp(normalizados_diferenciales[,c(1:6)])
+plot(pca$loadings, col=as.factor(colnames(normalizados_diferenciales[,c(1:6)])),  pch=19, cex=2, main="con nitrógeno")
+text(pca$loadings, as.vector(colnames(normalizados_diferenciales[,c(1:6)])), pos=3, cex=0.8)
+
+#Hagamos unos bonitos volcano-plot, nos ayudaran a comparar los datos
+with(deTab, plot(logFC, -log10(FDR), pch=20, cex=0.8, col="black", main="WT+N vs WT-N", xlim=c(-8, 8), ylim=c(0,150)))
+text(deTab[1:20,]$logFC,-log(deTab[1:20,]$FDR,10),labels=rownames(deTab[1:20,]),cex=0.7,pos=1)
+with(subset(deTab, FDR<.01 & abs(logFC)>2), points(logFC, -log10(FDR), pch=20, cex=0.5, col="green"))
+abline(v=2,lty=2, col="blue")
+abline(v=-2,lty=2, col="blue")
+legend("bottomright","Up_regulated",cex=0.7)
+legend("bottomleft","Down_regulated",cex=0.7)
+
+
+deTab2 = topTags(diff_exp2, n=Inf)$table
+deGenes2 = rownames(deTab2)[deTab2$FDR < 0.05 & abs(deTab2$logFC) > 1]
+
+with(deTab2, plot(logFC, -log10(FDR), pch=20, cex=0.8, col="black", main="ste12+N vs ste12-N", xlim=c(-10, 10), ylim=c(0,320)))
+text(deTab2[1:20,]$logFC,-log(deTab2[1:20,]$FDR,10),labels=rownames(deTab2[1:20,]),cex=0.7,pos=1)
+with(subset(deTab2, FDR<.01 & abs(logFC)>2), points(logFC, -log10(FDR), pch=20, cex=0.5, col="green"))
+abline(v=2,lty=2, col="blue")
+abline(v=-2,lty=2, col="blue")
+legend("bottomright","Up_regulated",cex=0.7)
+legend("bottomleft","Down_regulated",cex=0.7)
+
+#Si desean saber qué genes no se comparten entre ambas cepas en los inducidos, podemos hacer lo siguiente
+
+WTover= head(rownames(deTab), 30)
+ste12over= head(rownames(deTab2), 30)
+
+setdiff(WTover, ste12over)
