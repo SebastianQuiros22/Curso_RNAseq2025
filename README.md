@@ -1,16 +1,9 @@
 # Curso_RNAseq2025
 Curso RNAseq Universidad de Costa Rica
 
----
-title: "Gráficos"
-author: "Sebastian Quiros"
-date: "2025-03-04"
-output: html_document
----
-
 # Graficos
 
-## Datos
+### Datos
 ```{r}
 library(ggplot2)
 library(pheatmap)
